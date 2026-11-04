@@ -1,0 +1,218 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Pillar 1: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidClassName(cls) {
+      return cls is string && cls.size() <= 20 && cls in ['Class 6', 'Class 7', 'Class 8', 'Class 9'];
+    }
+
+    function isValidIsoDate(d) {
+      return d is string && d.size() == 10 && d.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    // ---------------------------------------------------------
+    // Entity 1: Teacher (/teachers/{teacherId})
+    // ---------------------------------------------------------
+    function isValidTeacher(data) {
+      return data.teacherId is string && data.teacherId.size() >= 1 && data.teacherId.size() <= 128 &&
+             data.teacherId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+             data.schoolName is string && data.schoolName.size() >= 1 && data.schoolName.size() <= 120 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /teachers/{teacherId} {
+      // Strictly owner-isolated PII (no list allowed on /teachers)
+      allow get: if isSignedIn() && isValidId(teacherId) && request.auth.uid == teacherId;
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+                       isValidId(teacherId) &&
+                       request.auth.uid == teacherId &&
+                       incoming().keys().hasAll(['teacherId', 'displayName', 'email', 'schoolName', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['teacherId', 'displayName', 'email', 'schoolName', 'createdAt', 'updatedAt']) &&
+                       isValidTeacher(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(teacherId) &&
+                       request.auth.uid == teacherId &&
+                       isValidTeacher(incoming()) &&
+                       incoming().teacherId == existing().teacherId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'schoolName', 'updatedAt']);
+
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------
+    // Entity 2: SchoolClass (/classes/{classId})
+    // ---------------------------------------------------------
+    function isValidSchoolClass(data) {
+      return data.teacherId is string && data.teacherId.size() >= 1 && data.teacherId.size() <= 128 &&
+             data.teacherId == request.auth.uid &&
+             isValidClassName(data.className) &&
+             data.schoolName is string && data.schoolName.size() >= 1 && data.schoolName.size() <= 120 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /classes/{classId} {
+      allow get: if isSignedIn() && isValidId(classId) && (
+        (resource == null && classId.size() > request.auth.uid.size() + 1 && classId[0:request.auth.uid.size() + 1] == (request.auth.uid + '_')) ||
+        (resource != null && existing().teacherId == request.auth.uid)
+      );
+      allow list: if isSignedIn() && existing().teacherId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(classId) &&
+                       incoming().keys().hasAll(['teacherId', 'className', 'schoolName', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['teacherId', 'className', 'schoolName', 'createdAt', 'updatedAt']) &&
+                       isValidSchoolClass(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(classId) &&
+                       existing().teacherId == request.auth.uid &&
+                       isValidSchoolClass(incoming()) &&
+                       incoming().teacherId == existing().teacherId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['className', 'schoolName', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isValidId(classId) && existing().teacherId == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------
+    // Entity 3: Student (/students/{studentId})
+    // ---------------------------------------------------------
+    function isValidStudent(data) {
+      return data.teacherId is string && data.teacherId.size() >= 1 && data.teacherId.size() <= 128 &&
+             data.teacherId == request.auth.uid &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.rollNumber is string && data.rollNumber.size() >= 1 && data.rollNumber.size() <= 30 &&
+             isValidClassName(data.className) &&
+             (!('photoBase64' in data) || data.photoBase64 == null || (data.photoBase64 is string && data.photoBase64.size() <= 120000)) &&
+             data.faceEmbedding is list && data.faceEmbedding.size() <= 256 &&
+             (data.faceEmbedding.size() == 0 || data.faceEmbedding[0] is number) &&
+             data.sampleCount is int && data.sampleCount >= 0 && data.sampleCount <= 20 &&
+             isValidIsoDate(data.registrationDate) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /students/{studentId} {
+      allow get: if isSignedIn() && isValidId(studentId) && resource != null && existing().teacherId == request.auth.uid;
+      allow list: if isSignedIn() && existing().teacherId == request.auth.uid;
+
+      // On initial enrollment, require non-empty facial embedding (>= 128 floats, e.g. 192D MobileFaceNet)
+      allow create: if isSignedIn() &&
+                       isValidId(studentId) &&
+                       incoming().keys().hasAll([
+                         'teacherId', 'name', 'rollNumber', 'className',
+                         'faceEmbedding', 'sampleCount', 'registrationDate',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'teacherId', 'name', 'rollNumber', 'className', 'photoBase64',
+                         'faceEmbedding', 'sampleCount', 'registrationDate',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidStudent(incoming()) &&
+                       incoming().faceEmbedding.size() >= 128 &&
+                       incoming().sampleCount >= 1;
+
+      // Action-Based Update: (A) Edit Student Info/Photo, or (B) Re-enroll / Clear Biometrics
+      allow update: if isSignedIn() &&
+                       isValidId(studentId) &&
+                       existing().teacherId == request.auth.uid &&
+                       isValidStudent(incoming()) &&
+                       incoming().teacherId == existing().teacherId &&
+                       incoming().registrationDate == existing().registrationDate &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Action 1: Edit Student Metadata
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'rollNumber', 'className', 'photoBase64', 'updatedAt'])) ||
+                         // Action 2: Biometric Removal or Re-Enrollment
+                         (incoming().diff(existing()).affectedKeys().hasOnly(['faceEmbedding', 'sampleCount', 'photoBase64', 'updatedAt']) &&
+                           ((incoming().faceEmbedding.size() == 0 && incoming().sampleCount == 0) ||
+                            (incoming().faceEmbedding.size() >= 128 && incoming().sampleCount >= 1)))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(studentId) && existing().teacherId == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------
+    // Entity 4: AttendanceRecord (/attendance/{attendanceId})
+    // ---------------------------------------------------------
+    function isValidAttendanceRecord(data) {
+      return data.teacherId is string && data.teacherId.size() >= 1 && data.teacherId.size() <= 128 &&
+             data.teacherId == request.auth.uid &&
+             isValidId(data.studentId) &&
+             data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 100 &&
+             data.rollNumber is string && data.rollNumber.size() >= 1 && data.rollNumber.size() <= 30 &&
+             isValidClassName(data.className) &&
+             isValidIsoDate(data.date) &&
+             data.time is string && data.time.size() >= 1 && data.time.size() <= 30 &&
+             data.status is string && data.status.size() <= 15 && data.status == 'Present' &&
+             data.verificationMethod is string && data.verificationMethod.size() <= 40 &&
+             data.verificationMethod in ['AI Face Recognition', 'Teacher Manual Verification'] &&
+             data.confidenceScore is number && data.confidenceScore >= 0 && data.confidenceScore <= 1 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    match /attendance/{attendanceId} {
+      allow get: if isSignedIn() && isValidId(attendanceId) && (
+        (resource == null && attendanceId.size() > request.auth.uid.size() + 1 && attendanceId[0:request.auth.uid.size() + 1] == (request.auth.uid + '_')) ||
+        (resource != null && existing().teacherId == request.auth.uid)
+      );
+      allow list: if isSignedIn() && existing().teacherId == request.auth.uid;
+
+      // Global Consistency + Anti-Duplicate Deterministic ID Invariant:
+      // 1. Referenced student must exist in /students/{studentId} and belong to request.auth.uid
+      // 2. Document ID must match teacherId + '_' + studentId + '_' + date so duplicate same-day attendance cannot be created
+      allow create: if isSignedIn() &&
+                       isValidId(attendanceId) &&
+                       incoming().keys().hasAll([
+                         'teacherId', 'studentId', 'studentName', 'rollNumber',
+                         'className', 'date', 'time', 'status',
+                         'verificationMethod', 'confidenceScore', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'teacherId', 'studentId', 'studentName', 'rollNumber',
+                         'className', 'date', 'time', 'status',
+                         'verificationMethod', 'confidenceScore', 'createdAt'
+                       ]) &&
+                       isValidAttendanceRecord(incoming()) &&
+                       attendanceId == (request.auth.uid + '_' + incoming().studentId + '_' + incoming().date) &&
+                       exists(/databases/$(database)/documents/students/$(incoming().studentId)) &&
+                       get(/databases/$(database)/documents/students/$(incoming().studentId)).data.teacherId == request.auth.uid;
+
+      // Terminal State Lock: Once marked Present, attendance records cannot be overwritten
+      allow update: if false;
+
+      allow delete: if isSignedIn() && isValidId(attendanceId) && existing().teacherId == request.auth.uid;
+    }
+  }
+}

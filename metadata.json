@@ -1,0 +1,10 @@
+{
+  "name": "Smart Attendance",
+  "description": "AI Facial Recognition School Attendance System for ABC High School science exhibition with CameraX face scanning, demo simulation, student directory, and CSV reports.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,217 @@
+{
+  "entities": {
+    "Teacher": {
+      "title": "Teacher",
+      "description": "Authorized teacher account profile isolated per Google Sign-In UID.",
+      "type": "object",
+      "properties": {
+        "teacherId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the teacher."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Full display name of the teacher."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Teacher Google account email (owner-isolated PII)."
+        },
+        "schoolName": {
+          "type": "string",
+          "description": "School name (e.g. ABC High School)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["teacherId", "displayName", "email", "schoolName", "createdAt", "updatedAt"]
+    },
+    "SchoolClass": {
+      "title": "SchoolClass",
+      "description": "Class section managed by an authorized teacher (Class 6, Class 7, Class 8, Class 9).",
+      "type": "object",
+      "properties": {
+        "teacherId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owning teacher."
+        },
+        "className": {
+          "type": "string",
+          "enum": ["Class 6", "Class 7", "Class 8", "Class 9"],
+          "description": "Standardized school class name."
+        },
+        "schoolName": {
+          "type": "string",
+          "description": "School name."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": ["teacherId", "className", "schoolName", "createdAt", "updatedAt"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Registered student profile and L2-normalized 192D MobileFaceNet facial embedding.",
+      "type": "object",
+      "properties": {
+        "teacherId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the teacher who enrolled the student."
+        },
+        "name": {
+          "type": "string",
+          "description": "Student full name."
+        },
+        "rollNumber": {
+          "type": "string",
+          "description": "Unique roll number within the class."
+        },
+        "className": {
+          "type": "string",
+          "enum": ["Class 6", "Class 7", "Class 8", "Class 9"],
+          "description": "Enrolled class."
+        },
+        "photoBase64": {
+          "type": "string",
+          "description": "Optional compact thumbnail data URI or empty string; live camera frames are never uploaded."
+        },
+        "faceEmbedding": {
+          "type": "array",
+          "description": "192-dimensional MobileFaceNet L2-normalized float embedding (or empty list if biometric data was removed)."
+        },
+        "sampleCount": {
+          "type": "integer",
+          "description": "Number of multi-angle facial samples averaged during registration (e.g. 5)."
+        },
+        "registrationDate": {
+          "type": "string",
+          "description": "ISO date yyyy-MM-dd when student was registered."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "teacherId",
+        "name",
+        "rollNumber",
+        "className",
+        "faceEmbedding",
+        "sampleCount",
+        "registrationDate",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Immutable daily attendance record created via verified facial recognition or manual teacher override.",
+      "type": "object",
+      "properties": {
+        "teacherId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the teacher."
+        },
+        "studentId": {
+          "type": "string",
+          "description": "Document ID of the matched student in /students."
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Matched student full name."
+        },
+        "rollNumber": {
+          "type": "string",
+          "description": "Matched student roll number."
+        },
+        "className": {
+          "type": "string",
+          "enum": ["Class 6", "Class 7", "Class 8", "Class 9"],
+          "description": "Student class."
+        },
+        "date": {
+          "type": "string",
+          "description": "School date in yyyy-MM-dd format."
+        },
+        "time": {
+          "type": "string",
+          "description": "Formatted check-in time (e.g. 08:30 AM)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Present"],
+          "description": "Attendance status."
+        },
+        "verificationMethod": {
+          "type": "string",
+          "enum": ["AI Face Recognition", "Teacher Manual Verification"],
+          "description": "Verification method used to mark attendance."
+        },
+        "confidenceScore": {
+          "type": "number",
+          "description": "Cosine similarity score in [0.0, 1.0]."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "teacherId",
+        "studentId",
+        "studentName",
+        "rollNumber",
+        "className",
+        "date",
+        "time",
+        "status",
+        "verificationMethod",
+        "confidenceScore",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/teachers/{teacherId}": {
+      "schema": { "$ref": "#/entities/Teacher" },
+      "description": "Teacher profiles keyed by Firebase Auth UID."
+    },
+    "/classes/{classId}": {
+      "schema": { "$ref": "#/entities/SchoolClass" },
+      "description": "School classes managed by each teacher."
+    },
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Registered students and their 192D MobileFaceNet embeddings."
+    },
+    "/attendance/{attendanceId}": {
+      "schema": { "$ref": "#/entities/AttendanceRecord" },
+      "description": "Concurrency-safe daily attendance records."
+    }
+  }
+}
